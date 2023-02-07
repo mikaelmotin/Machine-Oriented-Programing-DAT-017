@@ -2,6 +2,8 @@
  * 	startup.c
  *
  */
+ 
+ #include "startup.h"
 __attribute__((naked)) __attribute__((section (".start_section")) )
 void startup ( void )
 {
@@ -35,7 +37,45 @@ __asm__ volatile(".L1: B .L1\n");				/* never return */
 }
 
 void init_app( void ) {
+	*portModer = 0x55555555;
+}
+
+char ascii_read_controller( void ) {
+	char rv;
 	
+	ascii_ctrl_bit_set( B_E );
+	delay_mikro(2);
+	
+	rv = *portIDRHigh;  
+	ascii_ctrl_bit_clear( B_E );
+	return rv;
+}
+
+char ascii_read_status( void ) {
+	
+	*portModer = 0x00005555;
+	ascii_ctrl_bit_clear( B_RS );
+	ascii_ctrl_bit_set( B_RW );
+	char rv = ascii_read_controller(); 
+	
+	*portModer = 0x55555555;
+	return rv;
+} 
+
+void ascii_gotoxy(int x, int y) {
+	unsigned int address = x -1;
+	if(y == 2) {
+		address = address + 0x40;
+	}
+	ascii_write_cmd(0x80 | address);
+	
+}
+
+void ascii_write_char( unsigned char c ) {
+	while( (ascii_read_status() & 0x80) == 0x80 ) {}
+	delay_mikro(8);
+	ascii_write_data( c );
+	delay_mikro(50);
 }
 
 void delay_250ns( void ) {
@@ -79,17 +119,7 @@ void ascii_write_controller( unsigned char command) {
 	ascii_ctrl_bit_set( B_E );
 	*portIDRHigh = command;
 	ascii_ctrl_bit_clear( B_E );
-}
-
-unsigned char ascii_read_controller( void ) {
-	char rv;
-	
-	ascii_ctrl_bit_set( B_E );
-	delay_mikro(2);
-	
-	rv = *portIDRHigh;  // vad tusan är data_reg?
-	ascii_ctrl_bit_clear( B_E );
-	return rv;
+	delay_250ns();
 }
 
 void ascii_write_cmd( unsigned char command ){
@@ -106,18 +136,7 @@ void ascii_write_data( unsigned char data ) {
 	ascii_write_controller(data);
 }
 
-void ascii_read_status( void ) {
-	char rv;
-	*portModer = 0x00005555;
-	ascii_ctrl_bit_clear( B_RS );
-	ascii_ctrl_bit_set( B_RW );
-	rv = ascii_read_controller(); 
-	
-	*portModer = 0x55555555;
-	return rv;
-} 
-
-void ascii_read_data( void ) {
+char ascii_read_data( void ) {
 	char rv;
 	
 	*portModer = 0x00005555;
@@ -130,14 +149,55 @@ void ascii_read_data( void ) {
 	
 }
 
+void ascii_init( void ) {
+	// -- Struktur --
+	// Vänta tills statusflaggan är 0
+	// Fördröj 8 us
+	// write_cmd
+	// Fördröj med specifik fördröjning
+	
+	// Function Set:
+	while( (ascii_read_status() & 0x80) == 0x80 ) {}
+	delay_mikro(8);
+	ascii_write_cmd(0b111100); 
+	delay_mikro(50);
+	
+	// Display Control:
+	while( (ascii_read_status() & 0x80) == 0x80 ) {}
+	delay_mikro(8);
+	ascii_write_cmd(1);
+	delay_milli(2);
+	
+	// Clear Display:
+	while( (ascii_read_status() & 0x80) == 0x80 ) {}
+	delay_mikro(8);
+	ascii_write_cmd( 0b1001 );
+	delay_milli(2); 
+	
+	// Entry Mode Set:
+	while( (ascii_read_status() & 0x80) == 0x80 ) {}
+	delay_mikro(8);
+	ascii_write_cmd(0b110);
+	delay_mikro(50);
+}
+
 void main(void)
 {
+	char *s;
+	char test1[] = "Alfanumerisk ";
+	char test2[] = "Display - test";
+	
 	init_app();
-	while(1) {
-		*Bargraph = 0;
-		delay_milli(500);
-		*Bargraph = 0xFF;
-		delay_milli(500);
+	ascii_init();
+	ascii_gotoxy(1, 1);
+	s = test1;
+	while( *s ) {
+		ascii_write_char( *s++ );
 	}
+	
+	
 }
+
+
+
 
