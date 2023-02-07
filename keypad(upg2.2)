@@ -1,9 +1,7 @@
 /*
  * 	startup.c
- *
+ * 
  */
- 
- #include "startup.h"
 __attribute__((naked)) __attribute__((section (".start_section")) )
 void startup ( void )
 {
@@ -12,204 +10,110 @@ __asm__ volatile(" MOV SP,R0\n");
 __asm__ volatile(" BL main\n");					/* call main */
 __asm__ volatile(".L1: B .L1\n");				/* never return */
 
-/* Konstanter för portar */
-//#define E_MODER ((volatile unsigned int *) (0x40021000))
-//#define Bargraph ((volatile unsigned char *) (0x40021014)) 
-#define STK_CTRL ((volatile unsigned int *) (0xE000E010)) 
-#define STK_LOAD ((volatile unsigned int *) (0xE000E014)) 
-#define STK_VAL ((volatile unsigned int *) (0xE000E018)) 
-
-#define PORT_BASE 0x40021000
-#define portModer ((volatile unsigned int *) (PORT_BASE))
-#define portOtyper ((volatile unsigned short *) (PORT_BASE+0x4))
-#define portOspeedr ((volatile unsigned int *) (PORT_BASE+0x8))  
-#define portPupdr ((volatile unsigned int *) (PORT_BASE+0xC))
-
-#define portIDRLow ((volatile unsigned char *) (PORT_BASE+0x10))
-#define portIDRHigh ((volatile unsigned char *) (PORT_BASE+0x10+1))
-#define portODRLow ((volatile unsigned char *) (PORT_BASE+0x14))
-#define portODRHigh ((volatile unsigned char *) (PORT_BASE+0x14+1))
-
-#define B_E 0x40
-#define B_SELECT 4
-#define B_RW 2
-#define B_RS 1
+/* GLOBAL REGISTER VALUES - don't use ; with defines */
+#define GPIO_MODER ((volatile unsigned int *) (0x40020C00))
+#define GPIO_OTYPER ((volatile unsigned short *) (0x40020C04))
+#define GPIO_PUPDR ((volatile unsigned int *) (0x40020C0C))
+#define GPIO_IDR_LOW ((volatile unsigned char *) (0x40020C10))
+#define GPIO_IDR_HIGH ((volatile unsigned char *) (0x40020C11))
+#define GPIO_ODR_LOW ((volatile unsigned char *) (0x40020C14))
+#define GPIO_ODR_HIGH ((volatile unsigned char *) (0x40020C15))
 }
 
-void init_app( void ) {
-	*portModer = 0x55555555;
+void app_init( void ) {
+	/* MODER: */
+	//*(GPIO_MODER) &= 0xFFFFFFFF;
+	*(GPIO_MODER) = 0x55005555;
+	//1001 1001 0000 0000 1001 1001 1001 1001
+	
+	/* OTYPER: */
+	*(GPIO_OTYPER) = 0;
+	
+	/* PUPDR: */
+	*(GPIO_PUPDR) &= 0xFF00FFFF;
+	*(GPIO_PUPDR) |= 0x00AA0000;
 }
 
-char ascii_read_controller( void ) {
-	*portModer = 0x00005555;
-	char rv;
+void kbdActivate( unsigned int row) {
 	
-	ascii_ctrl_bit_set( B_E );
-	delay_mikro(2);
-	
-	rv = *portIDRHigh;  
-	ascii_ctrl_bit_clear( B_E );
-	*portModer = 0x55555555;
-	return rv;
-}
-
-char ascii_read_status( void ) {
-	
-	*portModer = 0x00005555;
-	ascii_ctrl_bit_clear( B_RS );
-	ascii_ctrl_bit_set( B_RW );
-	char rv = ascii_read_controller(); 
-	
-	*portModer = 0x55555555;
-	return rv;
-} 
-
-void ascii_gotoxy(int x, int y) {
-	unsigned char address;
-	
-	if(y != 1) {
-		address = 0x40 | x -1;;
-		
+	if(row == 0) {
+		*GPIO_ODR_HIGH = 0x00;
+	} else if(row == 1) {
+		*GPIO_ODR_HIGH = 0x10;
+	} else if(row == 2) {
+		*GPIO_ODR_HIGH = 0x20;
+	} else if(row == 3) {
+		*GPIO_ODR_HIGH = 0x40;
+	} else if(row == 4) {
+		*GPIO_ODR_HIGH = 0x80;
 	} else {
-		address = x -1;
+		*GPIO_ODR_HIGH = 0x00;
 	}
-	ascii_write_cmd(0x80 | address);
-	
+	 /*
+	switch(row)
+	{
+		case 1: *GPIO_ODR_HIGH = 0x10; break;
+		case 2:	*GPIO_ODR_HIGH = 0x20; break;
+		case 3:	*GPIO_ODR_HIGH = 0x40; break;
+		case 4:	*GPIO_ODR_HIGH = 0x80; break;
+		case 0:	*GPIO_ODR_HIGH = 0x00; break;
+	}*/
 }
 
-void ascii_write_char( unsigned char c ) {
-	while( (ascii_read_status() & 0x80) == 0x80 ) {}
-	delay_mikro(8);
-	ascii_write_data( c );
-	delay_mikro(50);
-}
-
-void delay_250ns( void ) {
-	*STK_CTRL = 0;
-	*STK_LOAD = ((168/4) - 1);
-	*STK_VAL = 0;
-	*STK_CTRL = 5;
-	while((*STK_CTRL & 0x10000) == 0);
-	*STK_CTRL = 0; 
-}
-
-void delay_mikro( unsigned int us ) {
-	// Compensating for slow simulation by div. with 1000 NOT ANYMORE
-	while(us > 0) {
-		delay_250ns();
-		delay_250ns();
-		delay_250ns();
-		delay_250ns();
-		us--;
-	}
-}
-
-
-void delay_milli( unsigned int ms ) { 
-	unsigned int ms_to_us = ms+10; // Borde vara *? //HELP
-	delay_mikro((ms_to_us));
-}
-
-void ascii_ctrl_bit_clear( char x ) {
-	char c = *portODRLow;
-	c = c & ~x;
-	*portODRLow = B_SELECT | c;
-}
-
-void ascii_ctrl_bit_set( unsigned char x ) {
-	char c = *portODRLow;
-	*portODRLow = B_SELECT | x | c;
-}
-
-void ascii_write_controller( unsigned char command) {
-	ascii_ctrl_bit_set( B_E );
-	*portODRHigh = command;
-	ascii_ctrl_bit_clear( B_E );
-	delay_250ns();
-}
-
-void ascii_write_cmd( unsigned char command ) {
-	ascii_ctrl_bit_clear( B_RS );
-	ascii_ctrl_bit_clear( B_RW );
-	
-	ascii_write_controller(command);
-}
-
-void ascii_write_data( unsigned char data ) {
-	ascii_ctrl_bit_clear( B_RW );
-	ascii_ctrl_bit_set( B_RS );
-	
-	
-	ascii_write_controller(data);
-}
-
-char ascii_read_data( void ) {
-	char rv;
-	
-	*portModer = 0x00005555;
-	ascii_ctrl_bit_set( B_RS );
-	ascii_ctrl_bit_set( B_RW );
-	rv = ascii_read_controller();
-	
-	*portModer = 0x55555555;
-	return rv;
-	
-}
-
-void ascii_init( void ) {
-	// -- Struktur --
-	// Vänta tills statusflaggan är 0
-	// Fördröj 8 us
-	// write_cmd
-	// Fördröj med specifik fördröjning
-	
-	// Function Set:
-	while( (ascii_read_status() & 0x80) == 0x80 ) {}
-	delay_mikro(8);
-	ascii_write_cmd(0x38); 
-	delay_mikro(50);
-	
-	// Display Control:
-	while( (ascii_read_status() & 0x80) == 0x80 ) {}
-	delay_mikro(8);
-	ascii_write_cmd(0x0C);
-	delay_milli(2);
-	
-	// Clear Display:
-	while( (ascii_read_status() & 0x80) == 0x80 ) {}
-	delay_mikro(8);
-	ascii_write_cmd(1);
-	delay_milli(2); 
-	
-	// Entry Mode Set:
-	while( (ascii_read_status() & 0x80) == 0x80 ) {}
-	delay_mikro(8);
-	ascii_write_cmd(6);
-	delay_mikro(50);
-}
-
-int main( void )
-{
-	char *s;
-	char test1[] = "Alfanumerisk";
-	char test2[] = "Display - test";
-	
-	init_app();
-	ascii_init();
-	ascii_gotoxy(1, 1);
-	s = test1;
-	while( *s  ) {
-		ascii_write_char( *s++ );
-	}
-	
-	ascii_gotoxy(1, 2);
-	s = test2;
-	while( *s ) {
-		ascii_write_char( *s++ );
-	}
+int kbdGetCol (void) {
+	unsigned short c;
+	c = *(GPIO_IDR_HIGH);
+	if ( c & 0x8 ) return 4;
+	if ( c & 0x4 ) return 3;
+	if ( c & 0x2 ) return 2;
+	if ( c & 0x1 ) return 1;
 	return 0;
 }
 
+unsigned char keyb( void ){
+	unsigned char key[]={1, 2, 3, 0xA, 4, 5, 6, 0xB, 7, 8, 9, 0xC, 0xE, 0, 0xF, 0xD};
+	int row, col;
+	
+	for (row=1; row <=4; row++) {
+		kbdActivate( row );
+		if( (col = kbdGetCol () ) ) {
+			kbdActivate( 0 );
+			return key [4*(row-1)+(col-1)];
+		} 
+	}
+	kbdActivate( 0 );
+	return 0xFF;	
+}
 
+void out7seg( unsigned char c){
+	if(c <= 15) {
+		if(c==0) *GPIO_ODR_LOW = 0x3F;
+		if(c==1) *GPIO_ODR_LOW = 0x06;
+		if(c==2) *GPIO_ODR_LOW = 0x5B;
+		if(c==3) *GPIO_ODR_LOW = 0x4F;
+		if(c==4) *GPIO_ODR_LOW = 0x66;
+		if(c==5) *GPIO_ODR_LOW = 0x6D;
+		if(c==6) *GPIO_ODR_LOW = 0x7D;
+		if(c==7) *GPIO_ODR_LOW = 0x07;
+		if(c==8) *GPIO_ODR_LOW = 0x7F;
+		if(c==9) *GPIO_ODR_LOW = 0x6F;
+		if(c==0xA) *GPIO_ODR_LOW = 0x77;
+		if(c==0xB) *GPIO_ODR_LOW = 0x7C;
+		if(c==0xC) *GPIO_ODR_LOW = 0x39;
+		if(c==0xD) *GPIO_ODR_LOW = 0x5E;
+		if(c==0xE) *GPIO_ODR_LOW = 0b1110110;
+		if(c==0xF) *GPIO_ODR_LOW = 0b1010010;
+		 
+	} else {
+		*GPIO_ODR_LOW = 0x00;
+	}	
+}
 
+void main(void)
+{
+   	app_init();
+	while( 1 ) {
+		out7seg( keyb() );
+	}
+}
 
