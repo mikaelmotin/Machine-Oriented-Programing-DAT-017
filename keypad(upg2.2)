@@ -1,0 +1,119 @@
+/*
+ * 	startup.c
+ * 
+ */
+__attribute__((naked)) __attribute__((section (".start_section")) )
+void startup ( void )
+{
+__asm__ volatile(" LDR R0,=0x2001C000\n");		/* set stack */
+__asm__ volatile(" MOV SP,R0\n");
+__asm__ volatile(" BL main\n");					/* call main */
+__asm__ volatile(".L1: B .L1\n");				/* never return */
+
+/* GLOBAL REGISTER VALUES - don't use ; with defines */
+#define GPIO_MODER ((volatile unsigned int *) (0x40020C00))
+#define GPIO_OTYPER ((volatile unsigned short *) (0x40020C04))
+#define GPIO_PUPDR ((volatile unsigned int *) (0x40020C0C))
+#define GPIO_IDR_LOW ((volatile unsigned char *) (0x40020C10))
+#define GPIO_IDR_HIGH ((volatile unsigned char *) (0x40020C11))
+#define GPIO_ODR_LOW ((volatile unsigned char *) (0x40020C14))
+#define GPIO_ODR_HIGH ((volatile unsigned char *) (0x40020C15))
+}
+
+void app_init( void ) {
+	/* MODER: */
+	//*(GPIO_MODER) &= 0xFFFFFFFF;
+	*(GPIO_MODER) = 0x55005555;
+	//1001 1001 0000 0000 1001 1001 1001 1001
+	
+	/* OTYPER: */
+	*(GPIO_OTYPER) = 0;
+	
+	/* PUPDR: */
+	*(GPIO_PUPDR) &= 0xFF00FFFF;
+	*(GPIO_PUPDR) |= 0x00AA0000;
+}
+
+void kbdActivate( unsigned int row) {
+	
+	if(row == 0) {
+		*GPIO_ODR_HIGH = 0x00;
+	} else if(row == 1) {
+		*GPIO_ODR_HIGH = 0x10;
+	} else if(row == 2) {
+		*GPIO_ODR_HIGH = 0x20;
+	} else if(row == 3) {
+		*GPIO_ODR_HIGH = 0x40;
+	} else if(row == 4) {
+		*GPIO_ODR_HIGH = 0x80;
+	} else {
+		*GPIO_ODR_HIGH = 0x00;
+	}
+	 /*
+	switch(row)
+	{
+		case 1: *GPIO_ODR_HIGH = 0x10; break;
+		case 2:	*GPIO_ODR_HIGH = 0x20; break;
+		case 3:	*GPIO_ODR_HIGH = 0x40; break;
+		case 4:	*GPIO_ODR_HIGH = 0x80; break;
+		case 0:	*GPIO_ODR_HIGH = 0x00; break;
+	}*/
+}
+
+int kbdGetCol (void) {
+	unsigned short c;
+	c = *(GPIO_IDR_HIGH);
+	if ( c & 0x8 ) return 4;
+	if ( c & 0x4 ) return 3;
+	if ( c & 0x2 ) return 2;
+	if ( c & 0x1 ) return 1;
+	return 0;
+}
+
+unsigned char keyb( void ){
+	unsigned char key[]={1, 2, 3, 0xA, 4, 5, 6, 0xB, 7, 8, 9, 0xC, 0xE, 0, 0xF, 0xD};
+	int row, col;
+	
+	for (row=1; row <=4; row++) {
+		kbdActivate( row );
+		if( (col = kbdGetCol () ) ) {
+			kbdActivate( 0 );
+			return key [4*(row-1)+(col-1)];
+		} 
+	}
+	kbdActivate( 0 );
+	return 0xFF;	
+}
+
+void out7seg( unsigned char c){
+	if(c <= 15) {
+		if(c==0) *GPIO_ODR_LOW = 0x3F;
+		if(c==1) *GPIO_ODR_LOW = 0x06;
+		if(c==2) *GPIO_ODR_LOW = 0x5B;
+		if(c==3) *GPIO_ODR_LOW = 0x4F;
+		if(c==4) *GPIO_ODR_LOW = 0x66;
+		if(c==5) *GPIO_ODR_LOW = 0x6D;
+		if(c==6) *GPIO_ODR_LOW = 0x7D;
+		if(c==7) *GPIO_ODR_LOW = 0x07;
+		if(c==8) *GPIO_ODR_LOW = 0x7F;
+		if(c==9) *GPIO_ODR_LOW = 0x6F;
+		if(c==0xA) *GPIO_ODR_LOW = 0x77;
+		if(c==0xB) *GPIO_ODR_LOW = 0x7C;
+		if(c==0xC) *GPIO_ODR_LOW = 0x39;
+		if(c==0xD) *GPIO_ODR_LOW = 0x5E;
+		if(c==0xE) *GPIO_ODR_LOW = 0b1110110;
+		if(c==0xF) *GPIO_ODR_LOW = 0b1010010;
+		 
+	} else {
+		*GPIO_ODR_LOW = 0x00;
+	}	
+}
+
+void main(void)
+{
+   	app_init();
+	while( 1 ) {
+		out7seg( keyb() );
+	}
+}
+
