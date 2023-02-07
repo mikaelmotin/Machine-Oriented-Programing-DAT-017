@@ -13,8 +13,8 @@ __asm__ volatile(" BL main\n");					/* call main */
 __asm__ volatile(".L1: B .L1\n");				/* never return */
 
 /* Konstanter för portar */
-#define E_MODER ((volatile unsigned int *) (0x40021000))
-#define Bargraph ((volatile unsigned char *) (0x40021014)) 
+//#define E_MODER ((volatile unsigned int *) (0x40021000))
+//#define Bargraph ((volatile unsigned char *) (0x40021014)) 
 #define STK_CTRL ((volatile unsigned int *) (0xE000E010)) 
 #define STK_LOAD ((volatile unsigned int *) (0xE000E014)) 
 #define STK_VAL ((volatile unsigned int *) (0xE000E018)) 
@@ -104,8 +104,8 @@ void delay_mikro( unsigned int us ) {
 
 
 void delay_milli( unsigned int ms ) { 
-	unsigned int ms_to_us = ms*1000; // Borde vara *? //HELP
-	delay_mikro((ms));
+	unsigned int ms_to_us = ms+10; // Borde vara *? //HELP
+	delay_mikro((ms_to_us));
 }
 
 void ascii_ctrl_bit_clear( char x ) {
@@ -186,7 +186,7 @@ void ascii_init( void ) {
 	delay_mikro(50);
 }
 
-void main(void)
+int main(void)
 {
 	char *s;
 	char test1[] = "Alfanumerisk";
