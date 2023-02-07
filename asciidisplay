@@ -84,6 +84,14 @@ void ascii_write_controller( unsigned char command) {
 }
 
 unsigned char ascii_read_controller( void ) {
+	char rv;
+	
+	ascii_ctrl_bit_set( B_E );
+	delay_mikro(2);
+	
+	//rv = DATA_REG; // vad tusan är data_reg?
+	ascii_ctrl_bit_clear( B_E );
+	return rv;
 }
 
 void ascii_write_cmd( unsigned char command ){
@@ -101,17 +109,27 @@ void ascii_write_data( unsigned char data ) {
 }
 
 void ascii_read_status( void ) {
-	char c;
+	char rv;
 	*portModer = 0x00005555;
 	ascii_ctrl_bit_set( B_RW );
 	ascii_ctrl_bit_clear( B_RS );
-	c = ascii_read_controller(); /* FIXA DENNA */
+	rv = ascii_read_controller(); /* FIXA DENNA */
 	
 	*portModer = 0x55555555;
-	return c;
+	return rv;
 } 
 
 void ascii_read_data( void ) {
+	char rv;
+	
+	*portModer = 0x00005555;
+	ascii_ctrl_bit_set( B_RS );
+	ascii_ctrl_bit_set( B_RW );
+	rv = ascii_read_controller();
+	
+	*portModer = 0x55555555;
+	return rv;
+	
 }
 
 void main(void)
