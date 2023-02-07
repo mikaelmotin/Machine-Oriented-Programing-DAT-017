@@ -41,6 +41,7 @@ void init_app( void ) {
 }
 
 char ascii_read_controller( void ) {
+	*portModer = 0x00005555;
 	char rv;
 	
 	ascii_ctrl_bit_set( B_E );
@@ -48,6 +49,7 @@ char ascii_read_controller( void ) {
 	
 	rv = *portIDRHigh;  
 	ascii_ctrl_bit_clear( B_E );
+	*portModer = 0x55555555;
 	return rv;
 }
 
@@ -121,7 +123,7 @@ void ascii_ctrl_bit_set( unsigned char x ) {
 
 void ascii_write_controller( unsigned char command) {
 	ascii_ctrl_bit_set( B_E );
-	*portIDRHigh = command;
+	*portODRHigh = command;
 	ascii_ctrl_bit_clear( B_E );
 	delay_250ns();
 }
@@ -186,7 +188,7 @@ void ascii_init( void ) {
 	delay_mikro(50);
 }
 
-int main(void)
+int main( void )
 {
 	char *s;
 	char test1[] = "Alfanumerisk";
