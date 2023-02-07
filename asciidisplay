@@ -63,9 +63,13 @@ char ascii_read_status( void ) {
 } 
 
 void ascii_gotoxy(int x, int y) {
-	unsigned int address = x -1;
-	if(y == 2) {
-		address = address + 0x40;
+	unsigned char address;
+	
+	if(y != 1) {
+		address = 0x40 | x -1;;
+		
+	} else {
+		address = x -1;
 	}
 	ascii_write_cmd(0x80 | address);
 	
@@ -100,7 +104,7 @@ void delay_mikro( unsigned int us ) {
 
 
 void delay_milli( unsigned int ms ) { 
-	unsigned int ms_to_us = ms+1000; // Borde vara *? //HELP
+	unsigned int ms_to_us = ms*1000; // Borde vara *? //HELP
 	delay_mikro((ms));
 }
 
@@ -130,8 +134,9 @@ void ascii_write_cmd( unsigned char command ) {
 }
 
 void ascii_write_data( unsigned char data ) {
-	ascii_ctrl_bit_set( B_RS );
 	ascii_ctrl_bit_clear( B_RW );
+	ascii_ctrl_bit_set( B_RS );
+	
 	
 	ascii_write_controller(data);
 }
@@ -159,25 +164,25 @@ void ascii_init( void ) {
 	// Function Set:
 	while( (ascii_read_status() & 0x80) == 0x80 ) {}
 	delay_mikro(8);
-	ascii_write_cmd(0b111100); 
+	ascii_write_cmd(0x38); 
 	delay_mikro(50);
 	
 	// Display Control:
 	while( (ascii_read_status() & 0x80) == 0x80 ) {}
 	delay_mikro(8);
-	ascii_write_cmd(1);
+	ascii_write_cmd(0x0C);
 	delay_milli(2);
 	
 	// Clear Display:
 	while( (ascii_read_status() & 0x80) == 0x80 ) {}
 	delay_mikro(8);
-	ascii_write_cmd( 0b1001 );
+	ascii_write_cmd(1);
 	delay_milli(2); 
 	
 	// Entry Mode Set:
 	while( (ascii_read_status() & 0x80) == 0x80 ) {}
 	delay_mikro(8);
-	ascii_write_cmd(0b110);
+	ascii_write_cmd(6);
 	delay_mikro(50);
 }
 
@@ -186,16 +191,13 @@ void main(void)
 	char *s;
 	char test1[] = "Alfanumerisk";
 	char test2[] = "Display - test";
-	int length = 0;
-	int length2 = 12;
+	
 	init_app();
 	ascii_init();
 	ascii_gotoxy(1, 1);
 	s = test1;
-	while( length < length2  ) {
-		*s++;
-		ascii_write_char( *s );
-		length++;
+	while( *s  ) {
+		ascii_write_char( *s++ );
 	}
 	
 	ascii_gotoxy(1, 2);
