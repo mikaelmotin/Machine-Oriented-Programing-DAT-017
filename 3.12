@@ -113,7 +113,7 @@ int draw_line(PLINE l) {
 	int x1 = p1.x;
 	int y1 = p1.y;
 	
-	if(1 == 1) { 
+	if(x0 < 128 && x1 < 128 && y0 < 64 && y1 < 64) { 
 		bresenhams_algorithm(x0, x1, y0, y1); 
 		return 1;
 	}
