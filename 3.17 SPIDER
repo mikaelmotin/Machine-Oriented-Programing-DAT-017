@@ -1,0 +1,361 @@
+/*
+ * 	startup.c
+ *
+ */
+ 
+__attribute__((naked)) __attribute__((section (".start_section")) )
+void startup ( void )
+{
+__asm__ volatile(" LDR R0,=0x2001C000\n");		/* set stack */
+__asm__ volatile(" MOV SP,R0\n");
+__asm__ volatile(" BL main\n");					/* call main */
+__asm__ volatile(".L1: B .L1\n");				/* never return */
+
+#define STK_CTRL ((volatile unsigned int *) (0xE000E010)) 
+#define STK_LOAD ((volatile unsigned int *) (0xE000E014)) 
+#define STK_VAL ((volatile unsigned int *) (0xE000E018)) 
+
+/* GLOBAL REGISTER VALUES - don't use ; with defines */
+#define GPIO_MODER ((volatile unsigned int *) (0x40020C00))
+#define GPIO_OTYPER ((volatile unsigned short *) (0x40020C04))
+#define GPIO_PUPDR ((volatile unsigned int *) (0x40020C0C))
+#define GPIO_IDR_LOW ((volatile unsigned char *) (0x40020C10))
+#define GPIO_IDR_HIGH ((volatile unsigned char *) (0x40020C11))
+#define GPIO_ODR_LOW ((volatile unsigned char *) (0x40020C14))
+#define GPIO_ODR_HIGH ((volatile unsigned char *) (0x40020C15))
+}
+
+__attribute__((naked))
+void graphic_initialize(void) {
+	__asm volatile (".HWORD 0xDFF0\n");
+	__asm volatile ("BX LR\n");
+}
+
+__attribute__((naked))
+void graphic_clear_screen(void) {
+	__asm volatile (".HWORD 0xDFF1\n");
+	__asm volatile ("BX LR\n");
+}
+
+__attribute__((naked))
+void graphic_pixel_set(int x, int y) {
+	__asm volatile (".HWORD 0xDFF2\n");
+	__asm volatile ("BX LR\n");
+}
+
+__attribute__((naked))
+void graphic_pixel_clear(int x, int y) {
+	__asm volatile (".HWORD 0xDFF3\n");
+	__asm volatile ("BX LR\n");
+}
+
+void app_init( void ) {
+	/* MODER: */
+	//*(GPIO_MODER) &= 0xFFFFFFFF;
+	*(GPIO_MODER) = 0x55005555;
+	//1001 1001 0000 0000 1001 1001 1001 1001
+	
+	/* OTYPER: */
+	*(GPIO_OTYPER) = 0;
+	
+	/* PUPDR: */
+	*(GPIO_PUPDR) &= 0xFF00FFFF;
+	*(GPIO_PUPDR) |= 0x00AA0000;
+}
+void kbdActivate( unsigned int row) {
+	
+	if(row == 0) {
+		*GPIO_ODR_HIGH = 0x00;
+	} else if(row == 1) {
+		*GPIO_ODR_HIGH = 0x10;
+	} else if(row == 2) {
+		*GPIO_ODR_HIGH = 0x20;
+	} else if(row == 3) {
+		*GPIO_ODR_HIGH = 0x40;
+	} else if(row == 4) {
+		*GPIO_ODR_HIGH = 0x80;
+	} else {
+		*GPIO_ODR_HIGH = 0x00;
+	}
+}
+
+int kbdGetCol (void) {
+	unsigned short c;
+	c = *(GPIO_IDR_HIGH);
+	if ( c & 0x8 ) return 4;
+	if ( c & 0x4 ) return 3;
+	if ( c & 0x2 ) return 2;
+	if ( c & 0x1 ) return 1;
+	return 0;
+}
+
+unsigned char keyb( void ){
+	unsigned char key[]={1, 2, 3, 0xA, 4, 5, 6, 0xB, 7, 8, 9, 0xC, 0xE, 0, 0xF, 0xD};
+	int row, col;
+	
+	for (row=1; row <=4; row++) {
+		kbdActivate( row );
+		if( (col = kbdGetCol () ) ) {
+			kbdActivate( 0 );
+			return key [4*(row-1)+(col-1)];
+		} 
+	}
+	kbdActivate( 0 );
+	return 0xFF;	
+}
+
+
+int abs(int value) {
+	if(value < 0) {
+		return value*(-1);
+	}
+	return value;
+}
+
+
+
+
+
+typedef struct {
+	char x; 
+	char y;
+} POINT, *PPOINT;
+
+#define MAX_POINTS
+typedef struct {
+	int numpoints;
+	int sizex;
+	int sizey;
+	POINT px[ MAX_POINTS ];
+} GEOMETRY, *PGEOMETRY;
+
+GEOMETRY ball_geometry = {
+	12,
+	4,4,
+	{
+		{0,1}, {0,2}, {1,0}, {1,1}, {1,2}, {1,3}, {2,0}, {2,1}, {2,2}, {2,3}, {3,1}, {3,2},
+	}
+};
+
+GEOMETRY spider_geometry = {
+	22,
+	5,8,
+	{
+		// x0 -> 5
+		{2,0}, {3,0},
+		// x1 -> 5
+		{1,1}, {4,1},
+		// x3 -> 5
+		{0,2}, {1,2}, {2, 2}, {3, 2}, {4, 2}, {5, 2},
+		// x4 -> 5
+		{0,3}, {2,3}, {3,3}, {5,3},
+		// x5 -> 5
+		{1,4}, {4,4},
+		// x6 -> 5
+		{2,5}, {3,5},
+		// x7 -> 5
+		{1,6}, {4,6},
+		// x8 -> 5
+		{0,7}, {5,7},
+	}
+};
+typedef struct tObj {
+	PGEOMETRY geo;
+	int dirx, diry;
+	int posx, posy;
+	void (* draw) (struct tObj *);
+	void (* clear) (struct tObj *);
+	void (* move) (struct tObj *);
+	void (* set_speed) (struct tObj *, int, int);
+} OBJECT, *POBJECT;
+
+
+
+void draw_ballobject(POBJECT o) {
+	PGEOMETRY geo_pointer = o -> geo;
+	int nump = geo_pointer -> numpoints;
+	int org_x = o -> posx;
+	int org_y = o -> posy; 
+	POINT px;
+	
+	for(int i = 0; i < (nump); i++) {
+		px =  geo_pointer -> px[i];
+		graphic_pixel_set(org_x+px.x, org_y+px.y);
+	}
+}
+
+void clear_ballobject(POBJECT o) {
+	PGEOMETRY geo_pointer = o -> geo;
+	int nump = geo_pointer -> numpoints;
+	int org_x = o -> posx;
+	int org_y = o -> posy; 
+	POINT px;
+	
+	for(int i = 0; i < (nump); i++) {
+		px =  geo_pointer -> px[i];
+		graphic_pixel_clear(org_x+px.x, org_y+px.y);
+	}
+}
+void move_ballobject(POBJECT o) {
+	clear_ballobject(o);
+	
+	PGEOMETRY geo_pointer = o -> geo;
+	int nump = geo_pointer -> numpoints;
+	int org_x = o -> posx;
+	int org_y = o -> posy; 
+	int dir_x = o -> dirx;
+	int dir_y = o -> diry;
+	int next_x = org_x;
+	int next_y = org_y;
+	POINT pixel;
+	
+	next_x +=dir_x;
+	next_y +=dir_y;
+	/* Ny positon */
+	if(next_x < 1) {
+		o -> dirx *= (-1);
+		//o -> dirx = -(o -> dirx);
+	}
+	if(next_x > 128) {
+		o -> dirx *= (-1);
+		//o -> dirx = -(o -> dirx);
+	}
+	if(next_y < 1) {
+		o -> diry *= (-1);
+		//o -> diry = -(o -> diry);
+	}
+	if(next_y > 64) {
+		o -> diry *= (-1);
+		//o -> diry = -(o -> diry);
+	}
+	
+	o -> posx += dir_x;
+	o -> posy += dir_y;
+    
+	
+	draw_ballobject(o);
+	
+	
+}
+
+void set_ballobject_speed(POBJECT o, int speed_x, int speed_y) {
+	o -> dirx = speed_x;
+	o -> diry = speed_y;
+}
+
+static OBJECT spiderobject = {
+	&spider_geometry,
+	0,0,
+	100,32,
+	draw_ballobject,
+	clear_ballobject,
+	move_ballobject,
+	set_ballobject_speed
+};
+static OBJECT ballobject={
+	&ball_geometry,
+	4,1,
+	50,10,
+	draw_ballobject,
+	clear_ballobject,
+	move_ballobject,
+	set_ballobject_speed
+};
+
+
+
+
+
+void delay_250ns( void ) {
+	*STK_CTRL = 0;
+	*STK_LOAD = ((168/4) - 1);
+	*STK_VAL = 0;
+	*STK_CTRL = 5;
+	while((*STK_CTRL & 0x10000) == 0);
+	*STK_CTRL = 0; 
+}
+
+void delay_mikro( unsigned int us ) {
+	
+	#define SIMULATOR
+	// Compensating for slow simulation by div. with 1000 NOT ANYMORE
+	while(us > 0) {
+		delay_250ns();
+		delay_250ns();
+		delay_250ns();
+		delay_250ns();
+		us--;
+	}
+}
+
+
+void delay_milli( unsigned int ms ) { 
+	unsigned int ms_to_us = ms+10; // Borde vara *? //HELP
+	delay_mikro((ms_to_us));
+}
+
+void reset_object(POBJECT obj, int startpos_x, int startpos_y) {
+	clear_ballobject(obj);
+	obj -> posx = startpos_x;
+	obj -> posy = startpos_y;
+}
+
+int screen_collision_spider(POBJECT spider) {
+	// om går utanför skärmen break;
+	if(spider -> posx > 128 - 5 || spider -> posx < 0 || spider -> posy > 64 - 8 || spider -> posy < 0) {
+		return 1;
+	}
+	return 0;
+}
+
+int collision(POBJECT ball, POBJECT spider) {
+	if((ball -> posx + 4) >= spider -> posx && (ball -> posx) <= spider -> posx + 5 ) {
+		if((ball -> posy + 4) >= spider -> posy && (ball -> posy) <= spider -> posy + 8 ) {
+			return 1;
+			
+		}
+	}
+	return 0;
+}
+
+void main(void) {
+	app_init();
+	char c;
+	graphic_initialize();
+	graphic_clear_screen();
+	POBJECT ball = &ballobject;
+	POBJECT spider = &spiderobject;
+	draw_ballobject(spider);
+	
+	int startpos_x_ball = ball -> posx;
+	int startpos_y_ball = ball -> posy;
+	int startpos_x_spider = spider -> posx;
+	int startpos_y_spider = spider -> posy;
+	
+	while(1) {
+		collision(ball, spider);
+		move_ballobject(ball);
+		spider -> move(spider);
+		c = keyb();
+		
+		switch(c) {
+			case 6:   spider->set_speed(spider, 2, 0); break;
+			case 4:   spider->set_speed(spider, -2, 0); break;
+			case 5:   spider->set_speed(spider, 0, 0); break;
+			case 2:   spider->set_speed(spider, 0, -2); break;
+			case 8:   spider->set_speed(spider, 0, 2); break;
+			default:  spider->set_speed(spider, 0, 0); break;
+			
+			// RESET OBJECTS:
+			case 1:   reset_object(ball, startpos_x_ball, startpos_y_ball); reset_object(spider, startpos_x_spider, startpos_y_spider); break;
+		}
+		if(collision(ball, spider)) {
+			break;
+		}
+		if(screen_collision_spider(spider)) {
+			break;
+		}
+		delay_milli(20);
+	}
+}
+
