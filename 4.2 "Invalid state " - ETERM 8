@@ -1,0 +1,32 @@
+@invstate.asm
+
+main:
+	LDR		R0, =func1
+	BLX		R0
+	LDR		R0, =func2
+	BLX		R0	
+	
+	.thumb_func 	@ anger att func1 ska exekveras i "Thumb-state"
+func1:
+	BX LR
+func2:
+	BX LR		@ func2 exekveras (default) i "ARM-state"
+
+
+				@@@ -- Frågor -- @@@
+@ Utförs instruktionen func2 korrekt
+	@ Nej
+
+@ Vilken adress innehåller nu PC?
+	@ 00000000
+
+@ Vilket värde har nu T-biten i EPSR?
+	@ 0
+
+@ "Du kan få hjälp av simulatorn att identifiera undantaget. Aktivera Break on IRQ,
+@ starta om programmet och stega på nytt igenom koden. Vad händer nu då funktionen
+@ func2 anropas, vilken information får du av simulatorn?
+	@ I Simserver visades en dialogruta innehållandes undantagstypen 
+	@ INVSTATE, samt på vilken adress undantaget inträffade: 0x20000006
+  
+  
