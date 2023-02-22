@@ -1,0 +1,60 @@
+/*
+ * 	startup.c
+ *
+ */
+__attribute__((naked)) __attribute__((section (".start_section")) )
+void startup ( void )
+{
+__asm__ volatile(" LDR R0,=0x2001C000\n");		/* set stack */
+__asm__ volatile(" MOV SP,R0\n");
+__asm__ volatile(" BL main\n");					/* call main */
+__asm__ volatile(".L1: B .L1\n");				/* never return */
+
+// D-portar
+#define D_GPIO         ((volatile unsigned int *)  0x40020C00)
+#define D_GPIO_MODER   ((volatile unsigned int *)  0x40020C00)
+#define D_GPIO_ODR_LOW ((volatile unsigned char *) 0x40020C14)
+
+// Timer-6
+#define TIM6_CR1 ((volatile unsigned short *) 0x40001000)
+#define TIM6_CNT ((volatile unsigned short *) 0x40001024)
+#define TIM6_ARR ((volatile unsigned short *) 0x4000102C)
+
+#define UDIS (1<<1)
+#define CEN  (1<<0) 
+}
+
+void timer6_init() {
+	*TIM6_CR1 &= ~CEN;         // Stoppa räknarmodul
+	*TIM6_ARR = 0xFFFF;        // Sätt räknarregister till maxvärde
+	*TIM6_CR1 |= (CEN | UDIS); // Behöver inget "update" event, startar räknare
+}
+
+void gpio_init( void ) {
+	*D_GPIO_MODER = 0x00005555; 
+}
+
+void main(void) {
+	char random = 0;
+	gpio_init();
+	timer6_init();
+	
+	while(1) {
+		/* Före:
+		random = (char) *TIM6_CNT;
+		*D_GPIO_ODR_LOW = random;
+		*/
+		
+		/* Efter: */
+		*D_GPIO_ODR_LOW = random;
+		random = (char) *TIM6_CNT;
+	}
+	
+}
+/* Svar på frågan:
+	Fem första slumptalen:
+	 -> 32, 96, FA, 5E, C2
+	
+	 * Efter ändring:
+	 -> 5A, BE, 22, 86, EA
+*/
