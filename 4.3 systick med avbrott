@@ -1,0 +1,80 @@
+/*
+ * 	startup.c
+ *
+ */
+__attribute__((naked)) __attribute__((section (".start_section")) )
+void startup ( void )
+{
+__asm__ volatile(" LDR R0,=0x2001C000\n");		/* set stack */
+__asm__ volatile(" MOV SP,R0\n");
+__asm__ volatile(" BL main\n");					/* call main */
+__asm__ volatile(".L1: B .L1\n");				/* never return */
+
+#define STK_CTRL ( (volatile unsigned int *) 0xE000E010)
+#define STK_LOAD ( (volatile unsigned int *) 0xE000E014)
+#define STK_VAL ( (volatile unsigned int *) 0xE000E018) 
+
+#define D_GPIO_MODER   ( (volatile unsigned int *) 0x40020C00)
+#define D_GPIO_ODR_LOW ( (volatile unsigned char*)  0x40020C14)
+
+#define SCB_VTOR ( (volatile unsigned int *) 0xE000ED08)
+
+#define SIMULATOR 1
+	#ifdef SIMULATOR
+	#define DELAY_COUNT 5
+	#else
+	#define DELAY_COUNT 1000000
+	#endif
+}
+
+// Global flag-variable to control delay
+static volatile int systick_flag;
+
+// Needs to be global as systick_irq_handler parameter needs to be void
+static volatile int delay_count;
+void systick_irq_handler( void );
+
+
+
+void delay_1mikro( void ) {
+	*STK_CTRL = 0;
+	*STK_LOAD = (168 - 1);
+	*STK_VAL = 0;
+	*STK_CTRL = 7;	
+}
+
+void delay(unsigned int count) {
+	if(count == 0) { return; }
+    delay_count = count;
+    systick_flag = 0;
+    delay_1mikro();
+}
+
+void systick_irq_handler( void ) {
+	*STK_CTRL = 0;
+	delay_count --;
+	if(delay_count > 0) { delay_1mikro(); } else { systick_flag = 1; }
+}
+
+init_app() {
+	//Initiera port-D:
+	*D_GPIO_MODER = 0x00005555;
+	
+	// Initiera undantagsvektor:
+	*((void (**)(void) ) (*SCB_VTOR + 0x0000003C) ) = systick_irq_handler;
+	
+}
+
+void main(void) {
+	init_app();
+	*D_GPIO_ODR_LOW = 0x0;
+	delay(DELAY_COUNT);
+	*D_GPIO_ODR_LOW = 0xFF;
+	while(1) {
+		if(systick_flag) { break; } 
+		// Code can be executed while waiting for timer here  
+	}
+	// Code that runs after timer is done
+	*D_GPIO_ODR_LOW = 0x0;
+}
+
