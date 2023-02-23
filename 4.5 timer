@@ -23,11 +23,15 @@ __asm__ volatile(".L1: B .L1\n");				/* never return */
 #define TIM6_PSC    ((volatile unsigned short *) 0x40001028)
 #define TIM6_SR     ((volatile unsigned short *) 0x40001010)
 
-// Avbrottsvektor
+// Avbrottsvektorer
+// #define SCB_VTOR ((void (**)(void) ) (0xE000ED08) )
 #define TIM6_IRQVEC ((void (**)(void) ) (0x2001C118) )
+
+ 
 
 // NVIC
 #define NVIC_TIM6_ISER ((volatile unsigned int *) 0xE000E104) 
+
 
 // Ställa in bitar i styrregister -> 0 eller 1 << till önskad bit i registret
 #define NVIC_TIM6_IRQ_BPOS (1<<22) 
@@ -80,6 +84,7 @@ void gpio_init( void ) {
 }
 
 void main(void) {
+	//*SCB_VTOR = *TIM6_IRQVEC;
 	char nbcd;
 	gpio_init();
 	timer6_init();
@@ -87,7 +92,7 @@ void main(void) {
 	while(1) {
 		nbcd = (seconds/10) << 4;
 		nbcd |= (seconds % 10) & 0xF;
-		*D_GPIO_ODR_LOW = seconds;
+		*D_GPIO_ODR_LOW = nbcd;
 	}
 }
 
