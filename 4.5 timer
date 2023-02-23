@@ -1,0 +1,93 @@
+/*
+ * 	startup.c
+ *
+ */
+__attribute__((naked)) __attribute__((section (".start_section")) )
+void startup ( void )
+{
+__asm__ volatile(" LDR R0,=0x2001C000\n");		/* set stack */
+__asm__ volatile(" MOV SP,R0\n");
+__asm__ volatile(" BL main\n");					/* call main */
+__asm__ volatile(".L1: B .L1\n");				/* never return */
+
+// D-portar
+#define D_GPIO         ((volatile unsigned int *)  0x40020C00)
+#define D_GPIO_MODER   ((volatile unsigned int *)  0x40020C00)
+#define D_GPIO_ODR_LOW ((volatile unsigned char *) 0x40020C14)
+
+// Timer-6
+#define TIM6_CR1    ((volatile unsigned short *) 0x40001000)
+#define TIM6_CNT    ((volatile unsigned short *) 0x40001024)
+#define TIM6_ARR    ((volatile unsigned short *) 0x4000102C)
+#define TIM6_DIER   ((volatile unsigned short *) 0x4000100C)
+#define TIM6_PSC    ((volatile unsigned short *) 0x40001028)
+#define TIM6_SR     ((volatile unsigned short *) 0x40001010)
+
+// Avbrottsvektor
+#define TIM6_IRQVEC ((void (**)(void) ) (0x2001C118) )
+
+// NVIC
+#define NVIC_TIM6_ISER ((volatile unsigned int *) 0xE000E104) 
+
+// Ställa in bitar i styrregister -> 0 eller 1 << till önskad bit i registret
+#define NVIC_TIM6_IRQ_BPOS (1<<22) 
+#define CEN  (1<<0)   // Svarande register: TIM6_CR1
+#define UIF  (1<<0)   // Svarande register: TIM6_SR
+#define UIE  (1<<0)   // Svarande register: TIM6_DIER
+
+void timer6_interrupt( void );
+}
+// Variabler att deklarera:
+// TIM6_IRQVEC        [D]
+// NVIC_TIM6_ISER     [D]
+// NVIC_TIM6_IRQ_BPOS [D]
+// TIM6_PSC           [D]
+// TIM6_DIER          [D]
+// UIE                [D]
+// UIF                [D]
+// TIM6_SR            [D]
+
+volatile int ticks;
+volatile int seconds;
+
+void timer6_interrupt( void ) {
+	// 100 ms period
+	*TIM6_SR &= ~UIF;
+	ticks ++;
+	
+	if(ticks > 9) {
+		ticks = 0;
+		seconds++;
+	}
+}
+
+void timer6_init( void ) {
+	ticks = 0;
+	seconds = 0;
+	*TIM6_CR1 &= ~CEN;
+	*TIM6_IRQVEC = timer6_interrupt; 
+	*NVIC_TIM6_ISER |= NVIC_TIM6_IRQ_BPOS; // Aktivering av avbrott
+	
+	// 100 ms tidbas
+	*TIM6_PSC = 839;
+	*TIM6_ARR = 9999;
+	*TIM6_DIER |= UIE;
+	*TIM6_CR1 |= CEN;
+}
+
+void gpio_init( void ) {
+	*D_GPIO_MODER = 0x00005555;
+}
+
+void main(void) {
+	char nbcd;
+	gpio_init();
+	timer6_init();
+	
+	while(1) {
+		nbcd = (seconds/10) << 4;
+		nbcd |= (seconds % 10) & 0xF;
+		*D_GPIO_ODR_LOW = seconds;
+	}
+}
+
