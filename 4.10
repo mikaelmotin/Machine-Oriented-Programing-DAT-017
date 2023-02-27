@@ -1,0 +1,166 @@
+/*
+ * 	startup.c
+ *
+ */
+__attribute__((naked)) __attribute__((section (".start_section")) )
+void startup ( void )
+{
+__asm__ volatile(" LDR R0,=0x2001C000\n");		/* set stack */
+__asm__ volatile(" MOV SP,R0\n");
+__asm__ volatile(" BL main\n");					/* call main */
+__asm__ volatile(".L1: B .L1\n");				/* never return */
+
+
+// PORT - D
+#define GPIO_D_MODER   ( (volatile unsigned int *) 0x40020C00)
+#define GPIO_D_ODRLOW ( (volatile unsigned char*)  0x40020C14)
+#define GPIO_D_ODRHIGH ( (volatile unsigned char*)  0x40020C15)
+
+// PORT - E
+#define GPIO_E_MODER  ((volatile unsigned int *)  0x40021000)
+#define GPIO_E_ODRLOW ((volatile unsigned char *)  0x40021014)
+#define GPIO_E_IDRLOW ((volatile unsigned int *)  0x40021010)
+
+// EXTI 
+#define SYSCFG_EXTICR1 ((unsigned int *) 0x40013808)
+#define EXTI_IMR	   ((unsigned int *) 0x40013C00)
+#define EXTI_RTSR	   ((unsigned int *) 0x40013C08)
+#define EXTI_FTSR	   ((unsigned int *) 0x40013C0C)
+#define EXTI_PR 	   ((unsigned int *) 0x40013C14)
+
+#define EXTI3_IRQ_BPOS      (1<<3)
+#define EXTI2_IRQ_BPOS      (1<<2)
+#define EXTI1_IRQ_BPOS      (1<<1)
+#define EXTI0_IRQ_BPOS      (1<<0)
+
+#define NVIC_EXTI3_IRQ_BPOS (1<<9)
+#define NVIC_EXTI2_IRQ_BPOS (1<<8)
+#define NVIC_EXTI1_IRQ_BPOS (1<<7)
+#define NVIC_EXTI0_IRQ_BPOS (1<<6)
+
+// NVIC
+#define NVIC_ISER0	   ((unsigned int *) 0xE000E100)
+
+// AVBROTTSVEKTORER
+#define EXTI3_IRQVEC ((void (**)(void) ) (0x2001C064) )
+#define EXTI2_IRQVEC ((void (**)(void) ) (0x2001C060) )
+#define EXTI1_IRQVEC ((void (**)(void) ) (0x2001C05C) )
+#define EXTI0_IRQVEC ((void (**)(void) ) (0x2001C058) )
+
+
+// IRQ - Maskar
+#define IRQ0 (1<<0)
+#define IRQ1 (1<<1)
+#define IRQ2 (1<<2)
+#define IRQ  (1<<3)
+#define IRQ0_RST (1<<4)
+#define IRQ1_RST (1<<5)
+#define IRQ2_RST (1<<6)
+}
+
+static volatile int count = 0;
+
+void interrupt_handler_EXTI0( void ) {
+	// If avbrott från EXTI3
+	if( *EXTI_PR & EXTI0_IRQ_BPOS) {
+		*EXTI_PR |= EXTI0_IRQ_BPOS; // kvittera avbrott EXTI3
+		
+			*GPIO_E_ODRLOW |= IRQ0_RST;   // Kvittera avbrott
+			*GPIO_E_ODRLOW &= ~IRQ0_RST; // RESET
+			count++;		        // Öka count
+	}
+}
+
+void interrupt_handler_EXTI1( void ) {
+	if( *EXTI_PR & EXTI1_IRQ_BPOS) {
+		*EXTI_PR |= EXTI1_IRQ_BPOS; // kvittera avbrott EXTI2
+		
+			*GPIO_E_ODRLOW |= IRQ1_RST;   // Kvittera avbrott
+			*GPIO_E_ODRLOW &= ~IRQ1_RST; // RESET
+			count = 0; 				// Nollställ count
+		
+	}
+}
+	
+void interrupt_handler_EXTI2( void ) {
+	if( *EXTI_PR & EXTI2_IRQ_BPOS) {
+		*EXTI_PR |= EXTI2_IRQ_BPOS; // kvittera avbrott EXTI2
+		
+			*GPIO_E_ODRLOW |= IRQ2_RST;   // Kvittera avbrott
+			*GPIO_E_ODRLOW &= ~IRQ2_RST; // RESET
+			
+			// If lampa tänd: -> släck, else {} -> tänd
+			if(*GPIO_D_ODRLOW) { count = 0; } else {count = 0xFF; }
+	}
+}
+
+void interrupt_handler0( void ) {
+	// Why this?
+}
+
+void init_app( void ) {
+	//PD07 - som utport
+	*GPIO_D_MODER = 0x00005555;
+	
+	//IRQ Flip Flop
+	*GPIO_E_MODER = 0x55555500;
+	
+	// Konfigurera pinnar hos IRQ Flip Flop:
+	// Nollställ
+	*SYSCFG_EXTICR1 &= 0x0000;
+	// Pin 0 till EXTI0
+	*SYSCFG_EXTICR1 |= 0x0004;
+	// Pin 1 till EXTI1
+	*SYSCFG_EXTICR1 |= 0x0040;
+	// Pin 2 till EXTI2
+	*SYSCFG_EXTICR1 |= 0x0400;
+	
+	// Konfigurera EXTI för att generera avbrott:
+	*EXTI_IMR |= EXTI3_IRQ_BPOS;
+	*EXTI_IMR |= EXTI2_IRQ_BPOS;
+	*EXTI_IMR |= EXTI1_IRQ_BPOS;
+	*EXTI_IMR |= EXTI0_IRQ_BPOS;
+	
+	// FLANKER
+	// Negativ flank:
+	*EXTI_RTSR |= EXTI3_IRQ_BPOS;
+	// Positiv flank:
+	*EXTI_FTSR &= ~EXTI3_IRQ_BPOS;
+	
+	// Negativ flank:
+	*EXTI_RTSR |= EXTI2_IRQ_BPOS;
+	// Positiv flank:
+	*EXTI_FTSR &= ~EXTI2_IRQ_BPOS;
+	
+	// Negativ flank:
+	*EXTI_RTSR |= EXTI1_IRQ_BPOS;
+	// Positiv flank:
+	*EXTI_FTSR &= ~EXTI1_IRQ_BPOS;
+	
+	// Negativ flank:
+	*EXTI_RTSR |= EXTI0_IRQ_BPOS;
+	// Positiv flank:
+	*EXTI_FTSR &= ~EXTI0_IRQ_BPOS;
+	
+	
+	
+	// Konfigurera avbrottsvektor(er):
+	//*EXTI3_IRQVEC = interrupt_handler3;
+	*EXTI0_IRQVEC = interrupt_handler_EXTI0;
+	*EXTI1_IRQVEC = interrupt_handler_EXTI1;
+	*EXTI2_IRQVEC = interrupt_handler_EXTI2;
+	
+	// NVIC för EXTI:
+	*NVIC_ISER0 |= NVIC_EXTI3_IRQ_BPOS;
+	*NVIC_ISER0 |= NVIC_EXTI2_IRQ_BPOS;
+	*NVIC_ISER0 |= NVIC_EXTI1_IRQ_BPOS;
+	*NVIC_ISER0 |= NVIC_EXTI0_IRQ_BPOS;
+}
+
+void main( void ) {
+	init_app();
+	while(1) {
+		*GPIO_D_ODRLOW = count;
+	}
+	
+}
